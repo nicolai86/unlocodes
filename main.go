@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"encoding/csv"
 	"encoding/json"
 	"flag"
@@ -8,7 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
+	"strings"
 )
 
 var (
@@ -17,17 +18,7 @@ var (
 	listen    string
 )
 
-func init() {
-	flag.StringVar(&listen, "listen", ":3030", "http listen address")
-	flag.StringVar(&dataPath, "data", "combined.csv", "combined.csv path")
-
-	flag.Parse()
-
-	f, err := os.Open(dataPath)
-	if err != nil {
-		log.Fatalf("Failed to open csv: %s", err)
-	}
-
+func parseLocode(f io.Reader) {
 	r := csv.NewReader(f)
 
 	for {
@@ -45,6 +36,34 @@ func init() {
 			unlocodes[fmt.Sprintf("%s%s", record[1], record[2])] = record[3]
 		}
 	}
+}
+
+func parseLocodes() {
+	r, err := zip.OpenReader(dataPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		if strings.Index(f.Name, "CodeListPart") != -1 {
+			rc, err := f.Open()
+			if err != nil {
+				log.Fatal(err)
+			}
+			parseLocode(rc)
+			rc.Close()
+		}
+	}
+}
+
+func init() {
+	flag.StringVar(&listen, "listen", ":3030", "http listen address")
+	flag.StringVar(&dataPath, "data", "loc152csv.zip", "path to UNECE locodes")
+
+	flag.Parse()
+
+	parseLocodes()
 }
 
 func UnLocodeLookup(w http.ResponseWriter, req *http.Request) {
